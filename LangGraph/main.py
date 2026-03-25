@@ -7,7 +7,7 @@ from langchain.tools import BaseTool, tool
 from langchain_mistralai.chat_models import ChatMistralAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
-from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from tavily import TavilyClient
 from typing_extensions import Annotated, TypedDict
 
@@ -33,7 +33,7 @@ def searchInternet(query: str) -> str:
 
 tools = [searchInternet]
 tools_dict: Dict[str, BaseTool] = {t.name: t for t in tools}
-model_with_tools = model.with_tools(tools_dict)
+model_with_tools = model.bind_tools(tools)
 
 
 def call_model(state: AgentState) -> AgentState:
@@ -50,6 +50,7 @@ def call_tool(state: AgentState) -> AgentState:
 
     for tool_call in tool_calls:
         selected_tool = tools_dict[tool_call["name"]]
+        print(f"[agent -> tool] {tool_call['name']} args={tool_call['args']}")
         result = selected_tool.invoke(tool_call["args"])
         tool_results.append(
             ToolMessage(
@@ -85,5 +86,13 @@ if __name__ == "__main__":
 
     for update in app.stream(initial_state, stream_mode="values"):
         latest = update["messages"][-1]
-        print(latest.content)
+        if isinstance(latest, AIMessage):
+            tool_calls = getattr(latest, "tool_calls", []) or []
+            if tool_calls:
+                for tool_call in tool_calls:
+                    print(f"[agent request] {tool_call['name']} args={tool_call['args']}")
+            else:
+                print(f"[agent reply] {latest.content}")
+        elif isinstance(latest, ToolMessage):
+            print(f"[tool -> agent] {latest.name} result={latest.content}")
 
